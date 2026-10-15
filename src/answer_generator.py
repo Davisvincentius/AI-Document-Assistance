@@ -21,10 +21,11 @@ def generate_answer(
 
     # 1. Cari bagian dokumen yang relevan.
     retrieved_chunks = search_chunks(
-        query=query,
-        chunks=chunks,
-        top_k=5,
-    )
+    query=query,
+    chunks=chunks,
+    top_k=8,
+    min_score=0.45,
+)
 
     if not retrieved_chunks:
         return {

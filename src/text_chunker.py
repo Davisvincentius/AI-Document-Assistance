@@ -10,69 +10,137 @@ REFERENCE_HEADINGS = {
     "bibliography",
 }
 
+# Judul bagian yang umum ditemukan dalam jurnal akademik.
+SECTION_NAMES = (
+    r"abstract|abstrak|"
+    r"introduction|pendahuluan|"
+    r"background|latar belakang|"
+    r"related work|literature review|tinjauan pustaka|"
+    r"methodology|method|methods|metodologi|metode|"
+    r"materials and methods|"
+    r"results and discussion|hasil dan pembahasan|"
+    r"results|findings|hasil|temuan|"
+    r"discussion|pembahasan|"
+    r"conclusion|conclusions|kesimpulan|"
+    r"limitations|keterbatasan|"
+    r"future work|pekerjaan selanjutnya|"
+    r"acknowledgments|acknowledgements|ucapan terima kasih|"
+    r"references|bibliography|daftar pustaka|daftar referensi"
+)
 
-def normalize_line(line: str) -> str:
-    """Membersihkan spasi berlebih pada satu baris."""
-    return " ".join(line.split())
+# Judul bernomor, misalnya "1. Introduction" atau "2.1 Data Understanding".
+NUMBERED_HEADING = re.compile(
+    rf"(?<!\w)(\d{{1,2}}(?:\.\d{{1,2}})*\.?\s+"
+    rf"(?:{SECTION_NAMES}))(?:\s*[:.]?\s*)",
+    re.IGNORECASE,
+)
+
+# Label abstrak dan kata kunci, termasuk jika menyatu dengan teks.
+LABEL_HEADING = re.compile(
+    r"(?<!\w)(Abstract|Abstrak|Keywords|Key words|Kata kunci)"
+    r"\s*:\s*",
+    re.IGNORECASE,
+)
+
+# Judul bagian tanpa nomor. Hanya dideteksi pada awal baris.
+LINE_HEADING = re.compile(
+    rf"^\s*(?:{SECTION_NAMES})\s*:?\s*$",
+    re.IGNORECASE,
+)
+
+
+def normalize_text(text: str) -> str:
+    """Membersihkan spasi tanpa menghilangkan batas paragraf."""
+    text = text.replace("\u00a0", " ").replace("\u00ad", "")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    lines = [
+        re.sub(r"[ \t]+", " ", line).strip()
+        for line in text.splitlines()
+    ]
+
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
 def is_reference_heading(line: str) -> bool:
-    """Mendeteksi judul bagian referensi."""
+    """Mendeteksi judul daftar referensi."""
     normalized = re.sub(r"[^a-zA-Z\s]", "", line)
     normalized = " ".join(normalized.lower().split())
     return normalized in REFERENCE_HEADINGS
 
 
-def split_paragraphs(text: str) -> list[str]:
+def split_sections(text: str) -> list[str]:
     """
-    Memisahkan teks berdasarkan baris kosong.
-    Baris yang terpotong karena layout PDF digabung kembali.
+    Memisahkan teks pada penanda bagian jurnal.
+    Judul bernomor dapat dideteksi meskipun menempel
+    pada akhir paragraf sebelumnya.
     """
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = normalize_text(text)
 
-    raw_paragraphs = re.split(r"\n\s*\n+", text)
-    paragraphs = []
+    if not text:
+        return []
 
-    for paragraph in raw_paragraphs:
-        lines = [
-            normalize_line(line)
-            for line in paragraph.splitlines()
-            if normalize_line(line)
-        ]
+    # Pisahkan label Abstract/Keywords jika menempel pada teks.
+    text = LABEL_HEADING.sub(
+        lambda match: "\n\n" + match.group(1) + ": ",
+        text,
+    )
 
-        if lines:
-            paragraphs.append(" ".join(lines))
+    # Pastikan judul bernomor dimulai di bagian baru.
+    text = NUMBERED_HEADING.sub(
+        lambda match: "\n\n" + match.group(1).strip() + " ",
+        text,
+    )
 
-    return paragraphs
+    sections = []
+
+    for block in re.split(r"\n\s*\n+", text):
+        block = block.strip()
+
+        if not block:
+            continue
+
+        # Jika blok berisi judul pada awal baris tersendiri,
+        # pertahankan sebagai bagian terpisah.
+        lines = block.splitlines()
+
+        if len(lines) > 1 and LINE_HEADING.match(lines[0]):
+            heading = lines[0].strip()
+            body = " ".join(line.strip() for line in lines[1:] if line.strip())
+
+            sections.append(
+                f"{heading} {body}".strip() if body else heading
+            )
+        else:
+            sections.append(" ".join(lines).strip())
+
+    return sections
 
 
-def split_long_paragraph(
-    paragraph: str,
+def split_long_text(
+    text: str,
     chunk_size: int,
     overlap: int,
 ) -> list[str]:
-    """
-    Membagi paragraf yang terlalu panjang menjadi beberapa chunk.
-    Paragraf pendek tidak dipotong.
-    """
-    words = paragraph.split()
+    """Membagi teks panjang dengan overlap antar-chunk."""
+    words = text.split()
 
     if len(words) <= chunk_size:
-        return [paragraph]
+        return [text]
 
-    chunks = []
+    pieces = []
     start = 0
 
     while start < len(words):
         end = min(start + chunk_size, len(words))
-        chunks.append(" ".join(words[start:end]))
+        pieces.append(" ".join(words[start:end]))
 
         if end == len(words):
             break
 
         start = end - overlap
 
-    return chunks
+    return pieces
 
 
 def chunk_pages(
@@ -81,8 +149,8 @@ def chunk_pages(
     overlap: int = 30,
 ) -> list[dict]:
     """
-    Membuat chunks berdasarkan paragraf dan mempertahankan
-    nomor halaman. Bagian referensi tidak ikut diproses.
+    Membuat chunks dengan mendeteksi bagian jurnal terlebih dahulu.
+    Format output tetap: chunk_id, page, text.
     """
 
     if chunk_size <= 0:
@@ -98,43 +166,39 @@ def chunk_pages(
     inside_references = False
 
     for page in pages:
-        text = page.get("text", "")
-        page_number = page["page"]
+        page_text = normalize_text(page.get("text", ""))
 
-        if inside_references:
+        if not page_text or inside_references:
             break
 
-        paragraphs = split_paragraphs(text)
+        sections = split_sections(page_text)
 
-        for paragraph in paragraphs:
-            lines = paragraph.splitlines()
+        for section in sections:
+            lines = section.splitlines()
 
-            # Periksa juga setiap baris untuk mendeteksi judul referensi.
-            if is_reference_heading(paragraph):
-                inside_references = True
-                break
-
+            # Hentikan pemrosesan saat daftar referensi dimulai.
             if any(is_reference_heading(line) for line in lines):
                 inside_references = True
                 break
 
-            # Abaikan paragraf kosong.
-            if not paragraph.strip():
-                continue
+            # Periksa juga judul referensi yang menempel
+            # pada teks setelah pemisahan bagian.
+            first_line = lines[0].strip() if lines else section.strip()
 
-            pieces = split_long_paragraph(
-                paragraph=paragraph,
+            if is_reference_heading(first_line):
+                inside_references = True
+                break
+
+            for piece in split_long_text(
+                section,
                 chunk_size=chunk_size,
                 overlap=overlap,
-            )
-
-            for piece in pieces:
+            ):
                 chunks.append({
                     "chunk_id": next_chunk_id,
-                    "page": page_number,
+                    "page": page["page"],
                     "text": piece,
                 })
-
                 next_chunk_id += 1
 
         if inside_references:

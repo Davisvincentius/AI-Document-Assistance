@@ -105,25 +105,46 @@ if uploaded_file is not None:
 
                         st.write(qa_result["answer"])
 
+                        
+                        st.markdown("### Jawaban")
+                        
+                        # Tampilkan jawaban AI sebagai satu paragraf.
+                        st.write(qa_result["answer"])
+                        
                         st.markdown("### 📚 Sumber Jawaban")
-
+                        
                         if qa_result["sources"]:
+                            # Kelompokkan semua sumber berdasarkan halaman PDF.
+                            sources_by_page = {}
+                        
                             for source in qa_result["sources"]:
-                                with st.expander(
-                                    f"Halaman {source['page']} "
-                                    f"— Kemiripan "
-                                    f"{source['score'] * 100:.1f}%"
-                                ):
-                                    st.write(source["text"])
+                                page = source.get("page")
+                                text = source.get("text", "").strip()
+                        
+                                if page not in sources_by_page:
+                                    sources_by_page[page] = []
+                        
+                                # Hindari menampilkan teks sumber yang sama dua kali.
+                                if text and text not in sources_by_page[page]:
+                                    sources_by_page[page].append(text)
+                        
+                            # Tampilkan satu kotak untuk setiap halaman.
+                            for page in sorted(
+                                sources_by_page,
+                                key=lambda value: value or 0,
+                            ):
+                                with st.expander(f"📄 Halaman {page}"):
+                                    for text in sources_by_page[page]:
+                                        st.write(text)
+                        
                         else:
-                            st.info(
-                                "Tidak ada sumber yang ditemukan."
-                            )
-
+                            st.info("Tidak ada sumber yang ditemukan.")
+                        
                         st.caption(
-                            "Jawaban disusun dari kalimat dokumen. "
-                            "Periksa sumber untuk memastikan konteksnya."
+                            "Jawaban dibuat berdasarkan konteks dokumen. "
+                            "Periksa sumber halaman untuk memverifikasi informasi."
                         )
+
 
                     except Exception as error:
                         st.error(

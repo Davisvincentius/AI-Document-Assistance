@@ -100,11 +100,6 @@ if uploaded_file is not None:
                                 chunks=chunks,
                                 top_k=3,
                             )
-
-                        st.markdown("### Jawaban")
-
-                        st.write(qa_result["answer"])
-
                         
                         st.markdown("### Jawaban")
                         

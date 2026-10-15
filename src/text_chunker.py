@@ -11,12 +11,68 @@ REFERENCE_HEADINGS = {
 }
 
 
+def normalize_line(line: str) -> str:
+    """Membersihkan spasi berlebih pada satu baris."""
+    return " ".join(line.split())
+
+
 def is_reference_heading(line: str) -> bool:
-    """Check whether a line marks the start of references."""
+    """Mendeteksi judul bagian referensi."""
     normalized = re.sub(r"[^a-zA-Z\s]", "", line)
     normalized = " ".join(normalized.lower().split())
-
     return normalized in REFERENCE_HEADINGS
+
+
+def split_paragraphs(text: str) -> list[str]:
+    """
+    Memisahkan teks berdasarkan baris kosong.
+    Baris yang terpotong karena layout PDF digabung kembali.
+    """
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    raw_paragraphs = re.split(r"\n\s*\n+", text)
+    paragraphs = []
+
+    for paragraph in raw_paragraphs:
+        lines = [
+            normalize_line(line)
+            for line in paragraph.splitlines()
+            if normalize_line(line)
+        ]
+
+        if lines:
+            paragraphs.append(" ".join(lines))
+
+    return paragraphs
+
+
+def split_long_paragraph(
+    paragraph: str,
+    chunk_size: int,
+    overlap: int,
+) -> list[str]:
+    """
+    Membagi paragraf yang terlalu panjang menjadi beberapa chunk.
+    Paragraf pendek tidak dipotong.
+    """
+    words = paragraph.split()
+
+    if len(words) <= chunk_size:
+        return [paragraph]
+
+    chunks = []
+    start = 0
+
+    while start < len(words):
+        end = min(start + chunk_size, len(words))
+        chunks.append(" ".join(words[start:end]))
+
+        if end == len(words):
+            break
+
+        start = end - overlap
+
+    return chunks
 
 
 def chunk_pages(
@@ -25,9 +81,8 @@ def chunk_pages(
     overlap: int = 30,
 ) -> list[dict]:
     """
-    Split PDF text into word-based chunks.
-    Exclude the bibliography section when a recognized
-    reference heading is found.
+    Membuat chunks berdasarkan paragraf dan mempertahankan
+    nomor halaman. Bagian referensi tidak ikut diproses.
     """
 
     if chunk_size <= 0:
@@ -43,41 +98,44 @@ def chunk_pages(
     inside_references = False
 
     for page in pages:
-        text = page["text"]
-        kept_lines = []
+        text = page.get("text", "")
+        page_number = page["page"]
 
-        for line in text.splitlines():
-            if is_reference_heading(line):
+        if inside_references:
+            break
+
+        paragraphs = split_paragraphs(text)
+
+        for paragraph in paragraphs:
+            lines = paragraph.splitlines()
+
+            # Periksa juga setiap baris untuk mendeteksi judul referensi.
+            if is_reference_heading(paragraph):
                 inside_references = True
                 break
 
-            if not inside_references:
-                kept_lines.append(line)
-
-        # Jika bagian referensi sudah dimulai pada halaman
-        # sebelumnya, halaman berikutnya tidak ikut dicari.
-        if inside_references and not kept_lines:
-            continue
-
-        cleaned_text = " ".join(kept_lines)
-        words = cleaned_text.split()
-        start = 0
-
-        while start < len(words):
-            end = min(start + chunk_size, len(words))
-
-            chunks.append({
-                "chunk_id": next_chunk_id,
-                "page": page["page"],
-                "text": " ".join(words[start:end]),
-            })
-
-            next_chunk_id += 1
-
-            if end == len(words):
+            if any(is_reference_heading(line) for line in lines):
+                inside_references = True
                 break
 
-            start = end - overlap
+            # Abaikan paragraf kosong.
+            if not paragraph.strip():
+                continue
+
+            pieces = split_long_paragraph(
+                paragraph=paragraph,
+                chunk_size=chunk_size,
+                overlap=overlap,
+            )
+
+            for piece in pieces:
+                chunks.append({
+                    "chunk_id": next_chunk_id,
+                    "page": page_number,
+                    "text": piece,
+                })
+
+                next_chunk_id += 1
 
         if inside_references:
             break

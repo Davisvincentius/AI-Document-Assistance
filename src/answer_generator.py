@@ -5,6 +5,24 @@ from google.genai import types
 
 from src.semantic_search import search_chunks
 
+import re
+
+
+def clean_context_text(text: str) -> str:
+    """Membersihkan judul berulang dan fragmen teks yang tidak perlu."""
+    text = re.sub(r"\s+", " ", text).strip()
+
+    # Hapus judul bagian yang menempel pada awal teks.
+    text = re.sub(
+        r"^(?:METODOLOGI|PENDAHULUAN|KESIMPULAN|"
+        r"DAFTAR PUSTAKA)\s+(?=[A-Z])",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    return text.strip()
+
 
 def generate_answer(
     query: str,

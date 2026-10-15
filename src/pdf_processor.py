@@ -32,10 +32,11 @@ def clean_extracted_text(text: str) -> str:
     return "\n".join(cleaned_lines).strip()
 
 
+
 def extract_text_from_pdf(pdf_bytes: bytes) -> list[dict]:
     """
-    Mengekstrak teks per halaman menggunakan blok teks.
-    Blok diurutkan berdasarkan posisi atas lalu kiri.
+    Mengekstrak teks per halaman dengan mempertahankan
+    batas blok dan informasi ukuran font.
     """
 
     pages = []
@@ -46,24 +47,28 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> list[dict]:
     ) as document:
 
         for page_number, page in enumerate(document, start=1):
-            blocks = page.get_text("blocks", sort=True)
-
+            data = page.get_text("dict", sort=True)
             text_blocks = []
 
-            for block in blocks:
-                # Format blok PyMuPDF:
-                # x0, y0, x1, y1, text, block_no, block_type
-                if len(block) < 7:
+            for block in data.get("blocks", []):
+                if block.get("type") != 0:
                     continue
 
-                block_text = block[4].strip()
-                block_type = block[6]
+                lines = []
 
-                # Abaikan blok gambar, bukan teks.
-                if block_type != 0 or not block_text:
-                    continue
+                for line in block.get("lines", []):
+                    spans = line.get("spans", [])
 
-                text_blocks.append(block_text)
+                    line_text = "".join(
+                        span.get("text", "")
+                        for span in spans
+                    ).strip()
+
+                    if line_text:
+                        lines.append(line_text)
+
+                if lines:
+                    text_blocks.append("\n".join(lines))
 
             raw_text = "\n\n".join(text_blocks)
             text = clean_extracted_text(raw_text)
@@ -74,6 +79,7 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> list[dict]:
             })
 
     return pages
+
 
 
 def render_pdf_page(

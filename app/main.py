@@ -36,11 +36,43 @@ if uploaded_file is not None:
 
     try:
         pages = extract_text_from_pdf(pdf_bytes)
+        
         chunks = chunk_pages(
-                    pages,
-                    chunk_size=150,
-                    overlap=30,
-                )
+            pages,
+            chunk_size=150,
+            overlap=30,
+        )
+        
+        # DEBUG SEMANTIC SEARCH
+        with st.expander("🔍 Debug Semantic Search"):
+            debug_question = st.text_input(
+                "Pertanyaan untuk menguji pencarian",
+                key="debug_search_question",
+            )
+        
+            if st.button("Uji Retrieval"):
+                if not debug_question.strip():
+                    st.warning("Masukkan pertanyaan terlebih dahulu.")
+                else:
+                    results = search_chunks(
+                        query=debug_question,
+                        chunks=chunks,
+                        top_k=5,
+                    )
+        
+                    if not results:
+                        st.info("Tidak ditemukan hasil yang relevan.")
+                    else:
+                        for result in results:
+                            score = result.get("score", 0)
+        
+                            st.markdown(
+                                f"**Halaman {result['page']} — "
+                                f"Skor {score:.3f}**"
+                            )
+                            st.write(result["text"])
+                            st.divider()
+
         
         
         if not pages:

@@ -42,6 +42,8 @@ if uploaded_file is not None:
             chunk_size=150,
             overlap=30,
         )
+        from src.text_chunker import CHUNKER_VERSION
+        st.caption(f"Chunker version: {CHUNKER_VERSION}")
         
         # DEBUG SEMANTIC SEARCH
         with st.expander("🔍 Debug Semantic Search"):

@@ -1,6 +1,8 @@
 
 import re
+
 CHUNKER_VERSION = "2026-10-15-v2"
+
 
 REFERENCE_HEADINGS = {
     "daftar pustaka",

@@ -1,3 +1,11 @@
+
+import sys
+from pathlib import Path
+
+# Menambahkan folder utama project ke Python path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
 import streamlit as st
 import pymupdf
 
@@ -5,6 +13,7 @@ from src.pdf_processor import extract_text_from_pdf, render_pdf_page
 from src.text_chunker import chunk_pages
 from src.semantic_search import search_chunks
 from src.answer_generator import generate_answer
+
 
 st.set_page_config(
     page_title="AI Document Assistant",
